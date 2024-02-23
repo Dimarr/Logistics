@@ -214,7 +214,6 @@ class AssignVehicleToJob(graphene.Mutation):
         # Get the delivery job and vehicle objects
         job = DeliveryJob.objects.get(pk=job_id)
         vehicle = Vehicle.objects.get(pk=vehicle_id)
-
         # Assign the vehicle to the job
         job.vehicle = vehicle
         job.save()
