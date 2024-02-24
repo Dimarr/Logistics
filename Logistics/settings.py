@@ -70,6 +70,10 @@ TEMPLATES = [
     },
 ]
 
+JWT_SECRET_KEY = 'testKey'
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_SECONDS = 7200
+
 GRAPHENE = {
     'SCHEMA': 'Logistics.schema.schema',
     'MIDDLEWARE': [

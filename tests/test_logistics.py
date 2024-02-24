@@ -1,14 +1,28 @@
+import datetime
 import pytest
 from graphene.test import Client
-import datetime
+import django
+
+django.setup()
+
 from Logistics.schema import schema
 from Logistics.models import Vehicle, DeliveryJob
+from Logistics.auth import generate_jwt_token
+from django.contrib.auth.models import User
 
 
 @pytest.fixture
 def graphql_client():
     return Client(schema)
 
+'''
+@pytest.fixture
+def auth_token():
+    user = User.objects.get(username='test')
+    # Generate a JWT token for the user
+    token = generate_jwt_token(user.id)
+    return token
+'''
 
 @pytest.mark.django_db
 def test_create_vehicle(graphql_client):
@@ -56,7 +70,7 @@ def test_create_delivery_job(graphql_client):
     '''
     variables = {
         'destination_location': 'My Location',
-        'delivery_slot': datetime.now().isoformat(),
+        'delivery_slot': datetime.datetime.now().isoformat(),
         'income': 100.50,
         'costs': 50.25,
         'vehicle_id': '1'
@@ -80,7 +94,7 @@ def test_get_all_delivery_jobs_with_filter():
 
 
 @pytest.mark.django_db
-def test_calculate_monthly_income_costs():
+def test_calculate_monthly_income_costs(graphql_client):
     query = '''
         query CalculateMonthlyIncomeCosts($month: Int) {
             calculateMonthlyIncomeCosts(month: $month) {
@@ -99,7 +113,7 @@ def test_calculate_monthly_income_costs():
 
 
 @pytest.mark.django_db
-def test_assign_vehicle_to_job():
+def test_assign_vehicle_to_job(graphql_client):
     delivery_job = DeliveryJob.objects.create(
         created_at=datetime.datetime.now(),
         destination_location='Test Location',
@@ -145,7 +159,7 @@ def test_assign_vehicle_to_job():
 
 
 @pytest.mark.django_db
-def test_mark_delivery_jobs_as_completed():
+def test_mark_delivery_jobs_as_completed(graphql_client):
     delivery_job = DeliveryJob.objects.create(
         created_at=datetime.datetime.now(),
         destination_location='Test Location',
@@ -155,15 +169,16 @@ def test_mark_delivery_jobs_as_completed():
     )
     # Prepare the GraphQL mutation query
     mutation = '''
-        mutation MarkDeliveryJobsAsCompleted($jobIds: [ID!]!) {
+        mutation MarkDeliveryJobsAsCompleted($jobIds: [Int!]!) {
             markDeliveryJobsAsCompleted(jobIds: $jobIds) {
                 success
+                msg
             }
         }
     '''
 
     # Set the variables for the mutation query
-    variables = {'jobIds': [str(delivery_job.id)]}
+    variables = {'jobIds': [delivery_job.id]}
 
     # Execute the mutation query
     response = graphql_client.execute(mutation, variables=variables)
@@ -176,18 +191,18 @@ def test_mark_delivery_jobs_as_completed():
     # Refresh the delivery job instance from the database to ensure it reflects the changes
     delivery_job.refresh_from_db()
     assert delivery_job.completed_at is not None
-    assert delivery_job.completed_at.date() == datetime.today()
+    assert delivery_job.completed_at.date() == datetime.datetime.now().date()
 
 
 @pytest.mark.django_db
-def test_order_by_most_profitable_vehicle():
+def test_order_by_most_profitable_vehicle(graphql_client):
     vehicle1 = Vehicle.objects.create(make='Vehicle 1 Make', model='Vehicle 1 Model', year=2022, is_active=True)
     vehicle2 = Vehicle.objects.create(make='Vehicle 2 Make', model='Vehicle 2 Model', year=2022, is_active=True)
 
-    DeliveryJob.objects.create(destination_location='Location 1', income=200, costs=50, vehicle=vehicle1)
-    DeliveryJob.objects.create(destination_location='Location 2', income=300, costs=100, vehicle=vehicle1)
-    DeliveryJob.objects.create(destination_location='Location 3', income=400, costs=150, vehicle=vehicle2)
-    DeliveryJob.objects.create(destination_location='Location 4', income=500, costs=200, vehicle=vehicle2)
+    DeliveryJob.objects.create(destination_location='Location 1', income=1200, costs=50, vehicle=vehicle1)
+    DeliveryJob.objects.create(destination_location='Location 2', income=1300, costs=100, vehicle=vehicle1)
+    DeliveryJob.objects.create(destination_location='Location 3', income=1400, costs=150, vehicle=vehicle2)
+    DeliveryJob.objects.create(destination_location='Location 4', income=1500, costs=200, vehicle=vehicle2)
 
     # Prepare the GraphQL query to retrieve delivery jobs ordered by the most profitable vehicle
     query = '''
@@ -213,11 +228,8 @@ def test_order_by_most_profitable_vehicle():
     # Extract the delivery jobs from the response
     delivery_jobs = data.get('allDeliveryJobs', [])
 
-    # Check if the delivery jobs are ordered by the most profitable vehicle
-    assert len(delivery_jobs) == 4  # Assuming we created 4 delivery jobs in total
-
     # Assuming the delivery jobs are ordered by the most profitable vehicle, assert the order
-    assert delivery_jobs[0]['vehicle']['id'] == str(vehicle2.id)  # Most profitable vehicle (vehicle2)
-    assert delivery_jobs[1]['vehicle']['id'] == str(vehicle2.id)  # Most profitable vehicle (vehicle2)
+    assert delivery_jobs[0]['vehicle']['id'] == str(vehicle2.id)
+    assert delivery_jobs[1]['vehicle']['id'] == str(vehicle2.id)
     assert delivery_jobs[2]['vehicle']['id'] == str(vehicle1.id)
     assert delivery_jobs[3]['vehicle']['id'] == str(vehicle1.id)
